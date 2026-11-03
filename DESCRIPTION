@@ -1,0 +1,45 @@
+Package: dr3
+Title: Doubly-Robust ATE Estimators: Three Routes to One Answer
+Version: 0.0.0.9001
+Authors@R:
+    person("M. Ehsan", "Karim", email = "ehsan.karim@ubc.ca",
+           role = c("aut", "cre"), comment = c(ORCID = "0000-0002-0346-2871"))
+Description: A transparent, teaching-oriented reference implementation of the
+    average treatment effect (ATE) estimators reconciled in "Three Routes to One
+    Answer": g-computation, inverse-probability weighting, AIPW / one-step, and
+    targeted maximum likelihood (TMLE), together with their cross-fit (double
+    machine learning, CV-TMLE) and double-cross-fit (DC-AIPW, DC-TMLE) variants.
+    Every estimator shares one Super Learner nuisance library, so differences
+    between them come from the combination rule and the fitting scheme (and, for
+    split-based estimators, from the random split), not from separate
+    implementations. The package is meant for teaching and reproducibility and is cross-checked
+    against the established 'tmle' and 'AIPW' packages, not as a replacement for
+    them.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Imports:
+    graphics,
+    stats,
+    SuperLearner
+Suggests:
+    AIPW,
+    causaldata,
+    DoubleML,
+    earth,
+    glmnet,
+    Hmisc,
+    knitr,
+    lgr,
+    mlr3,
+    mlr3learners,
+    ranger,
+    rmarkdown,
+    testthat (>= 3.0.0),
+    tmle,
+    withr
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+URL: https://github.com/ehsanx/dr3, https://ehsanx.github.io/dr3/
+BugReports: https://github.com/ehsanx/dr3/issues

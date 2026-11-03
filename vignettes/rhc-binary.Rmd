@@ -1,0 +1,83 @@
+---
+title: "Binary outcomes: right-heart catheterization"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Binary outcomes: right-heart catheterization}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+library(dr3)
+ok  <- requireNamespace("Hmisc", quietly = TRUE) &&
+       requireNamespace("SuperLearner", quietly = TRUE)
+rhc <- if (ok) tryCatch(dr_rhc(), error = function(e) NULL) else NULL
+knitr::opts_chunk$set(
+  eval = !is.null(rhc), collapse = TRUE, comment = "#>",
+  fig.width = 7, fig.height = 4.6, fig.align = "center"
+)
+```
+
+Everything in dr3 works the same way for a **binary** outcome; only the scale of
+the answer changes — the average treatment effect becomes a **risk difference**,
+`E[Y^1] - E[Y^0]` on the probability scale. We use the right-heart
+catheterization (RHC) study of Connors et al. (1996): does placing a
+Swan-Ganz catheter within 24h of ICU admission (`swang1`) change 30-day
+mortality? It is a real observational dataset, so there is no known truth.
+
+```{r note, echo = FALSE, results = "asis", eval = is.null(rhc)}
+cat("> This article needs the suggested package **Hmisc** (to download RHC from",
+    "the public Vanderbilt repository), **SuperLearner**, and an internet",
+    "connection; its code is shown but not run here.\n")
+```
+
+## Load the data
+
+`dr_rhc()` downloads Vanderbilt's R-format export of RHC (`rhc.sav`) from the public
+Vanderbilt biostatistics repository via `Hmisc::getHdata()` — dr3 ships no data — and
+returns the treatment, the binary outcome, and one-hot-encoded covariates.
+
+The paper analyses Vanderbilt's CSV export of the same dataset (`rhc.csv`). The two
+exports differ slightly: four factors have different reference levels, and numeric
+covariates differ by at most about 5e-6. Estimates from this loader can therefore
+differ slightly from the paper's (see `?dr_rhc`), apart from the smaller learner
+library used below.
+
+```{r load}
+str(rhc[c("name", "outcome_type")])
+c(n = length(rhc$Y), treated = sum(rhc$A), deaths = sum(rhc$Y))
+```
+
+## One call
+
+`dr_panel()` detects the binary outcome and targets on the risk-difference scale
+automatically (the TMLE scaling uses `y_range = c(0, 1)`). Pass
+`family_y = binomial()` so the shared Super Learner fits the outcome model as a
+probability.
+
+```{r panel}
+set.seed(1)   # the full-sample fits use the current RNG state; `seed` sets the folds
+fit <- dr_panel(rhc$Y, rhc$A, rhc$X, family_y = binomial(),
+                SL.library = c("SL.mean", "SL.glm", "SL.glmnet"), seed = 1)
+fit
+```
+
+```{r forest}
+plot(fit, xlab = "risk difference (30-day mortality)")
+```
+
+## Reading the panel
+
+Every doubly-robust estimate is **positive** — RHC is associated with higher
+30-day mortality — reproducing the direction of the original Connors et al.
+finding. Compare the full-sample rows with the cross-fit ones: in the paper's RHC
+analysis (Step 4) the full-sample AIPW read lower than the cross-fit estimates, with
+smaller in-sample residuals and a smaller one-step correction than out of fold;
+with the small library used here the two are close. Without ground truth, neither
+gap would establish which estimate is more accurate. The
+singly-robust plug-ins (g-computation, IPTW) carry no analytic interval.
+
+Because the outcome is a 0/1 event, the estimates and their Wald intervals are on
+the risk-difference scale: a value of `0.05` means five extra deaths per hundred
+patients attributable to catheterization under the no-unmeasured-confounding
+assumption.

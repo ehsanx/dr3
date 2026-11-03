@@ -1,0 +1,130 @@
+---
+title: "The software bridge: reconciling with tmle, AIPW, and DoubleML"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{The software bridge: reconciling with tmle, AIPW, and DoubleML}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+library(dr3)
+have <- function(p) requireNamespace(p, quietly = TRUE)
+core <- have("causaldata") && have("SuperLearner")
+if (core) suppressMessages(library(SuperLearner))  # AIPW resolves its SL wrappers on the search path
+d   <- if (core) tryCatch(dr_nhefs(), error = function(e) NULL) else NULL
+lib <- c("SL.mean", "SL.glm", "SL.glmnet")
+knitr::opts_chunk$set(eval = !is.null(d), collapse = TRUE, comment = "#>")
+```
+
+Applied researchers often find that `tmle`, `AIPW`, and `DoubleML` return
+*different* numbers on the same data and worry the methods disagree. This article
+runs them next to dr3's hand-coded estimators on the same NHEFS estimand. In the
+paper (Step 7), the spread among single runs of five implementations is compatible
+with the fitting scheme (in-sample or out-of-fold) plus single-split noise; the
+estimator label is not needed to account for it. Each comparison below is one run,
+so it carries that noise.
+
+```{r note, echo = FALSE, results = "asis", eval = is.null(d)}
+cat("> This article needs **causaldata** and **SuperLearner** (and, for the full",
+    "table, **tmle**, **AIPW**, **DoubleML** + **mlr3**); its code is shown but",
+    "not run here.\n")
+```
+
+We put the identical NHEFS estimand through each implementation with **one shared
+Super Learner library** (`r paste(lib, collapse = ", ")`). These three learners keep
+the article fast. The paper uses the five-learner `default_dr_library`, so the
+numbers below differ from the paper's; the last section shows how to reproduce
+the paper's dr3 entries.
+
+```{r hand}
+set.seed(1)
+nu_full  <- dr_nuisance(d$Y, d$A, d$X, "full",     SL.library = lib)
+nu_cross <- dr_nuisance(d$Y, d$A, d$X, "crossfit", SL.library = lib)
+hand_tmle <- dr_tmle(d$Y, d$A, nu_full)$estimate   # hand TMLE (full-sample targeting)
+hand_dml  <- dr_aipw(d$Y, d$A, nu_cross)$estimate  # hand DML (cross-fit one-step)
+c(hand_TMLE = hand_tmle, hand_DML = hand_dml)
+```
+
+```{r bridge}
+rows <- list()
+add  <- function(cmp, hand, pkg)
+  rows[[length(rows) + 1]] <<-
+    data.frame(comparison = cmp, dr3 = hand, package = pkg, abs_diff = abs(hand - pkg))
+
+## tmle::tmle  -- same Super Learner library, full-data targeting
+if (have("tmle")) tryCatch({
+  set.seed(1)
+  tm <- tmle::tmle(Y = d$Y, A = d$A, W = as.data.frame(d$X),
+                   Q.SL.library = lib, g.SL.library = lib, family = "gaussian")
+  add("TMLE (full) vs tmle::tmle", hand_tmle, tm$estimates$ATE$psi)
+}, error = function(e) message("tmle: ", conditionMessage(e)))
+
+## AIPW::AIPW  -- same library, k-fold cross-fitting (= DML)
+if (have("AIPW")) tryCatch({
+  set.seed(1)
+  ap <- AIPW::AIPW$new(Y = d$Y, A = d$A, W = as.data.frame(d$X),
+                       Q.SL.library = lib, g.SL.library = lib,
+                       k_split = 5, verbose = FALSE)$fit()$summary()
+  add("DML (cross-fit) vs AIPW::AIPW", hand_dml, as.numeric(ap$estimates$RD["Estimate"]))
+}, error = function(e) message("AIPW: ", conditionMessage(e)))
+
+## DoubleML::DoubleMLIRM -- independent mlr3 ranger learners (a looser check)
+if (have("DoubleML") && have("mlr3") && have("mlr3learners")) tryCatch({
+  suppressMessages({ library(mlr3); library(mlr3learners) })
+  if (have("lgr")) lgr::get_logger("mlr3")$set_threshold("warn")
+  df  <- data.frame(Y = d$Y, A = d$A, as.data.frame(d$X))
+  dat <- DoubleML::DoubleMLData$new(df, y_col = "Y", d_cols = "A",
+                                    x_cols = setdiff(names(df), c("Y", "A")))
+  set.seed(1)
+  irm <- DoubleML::DoubleMLIRM$new(dat,
+           ml_g = mlr3::lrn("regr.ranger"),
+           ml_m = mlr3::lrn("classif.ranger", predict_type = "prob"),
+           n_folds = 5, score = "ATE")
+  irm$fit()
+  add("DML (cross-fit) vs DoubleML (ranger)", hand_dml, as.numeric(irm$coef))
+}, error = function(e) message("DoubleML: ", conditionMessage(e)))
+
+knitr::kable(do.call(rbind, rows), digits = 3,
+             col.names = c("comparison", "dr3 (hand)", "package", "abs diff"))
+```
+
+## What the table says
+
+With the **same** Super Learner library, dr3's hand-coded estimators land close
+to `tmle::tmle` and `AIPW::AIPW` but not on top of them, and one run cannot say
+why. Sharing a library does not share the realized fits: each package draws its
+own internal cross-validation folds and ensemble weights, `tmle::tmle` by default
+cross-validates its initial outcome predictions while dr3's full-sample TMLE does
+not, and every entry is a single run. `DoubleML` here uses independent `ranger`
+learners rather than the shared library, so it is a looser comparison.
+
+The practical lesson: before reading a gap between two implementations as a
+disagreement, check the fitting scheme (in-sample or out-of-fold), match the
+library and the propensity-truncation bounds where you can, and compare medians
+over repeated seeds rather than single runs. On NHEFS, the paper's three
+implementations that share one Super Learner library (its hand-coded engine,
+`tmle`, and `AIPW`) have medians over 20 seeds within 0.01 kg of one another;
+that agreement of the combined differences does not isolate the effect of any
+single setting.
+
+## Reproducing the paper's dr3 entries
+
+The paper's software table lists three dr3 entries, all with `default_dr_library`.
+The code below is not run here, because the five-learner fits take a few minutes.
+The values in the comments were obtained with the package versions pinned in the
+companion's `renv.lock` (SuperLearner 2.0-29, ranger 0.18.0, earth 5.3.4,
+glmnet 4.1-10); other versions can change the last digits or more.
+
+```{r paper, eval = FALSE}
+d <- dr_nhefs()
+set.seed(1)
+nu_full <- dr_nuisance(d$Y, d$A, d$X, "full")
+dr_aipw(d$Y, d$A, nu_full)$estimate   # 3.31698634236364  one-step, full sample
+dr_tmle(d$Y, d$A, nu_full)$estimate   # 3.32545796111413  targeting, full sample
+nu_x <- dr_nuisance(d$Y, d$A, d$X, "crossfit", seed = 1)
+dr_aipw(d$Y, d$A, nu_x)$estimate      # 3.40961180021142  DML, five-fold cross-fit
+```
+
+Repeating the cross-fit with `seed = 1` to `20` gives the twenty single runs of
+the hand-coded DML in the paper's seed-to-seed figure.

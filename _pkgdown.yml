@@ -1,0 +1,41 @@
+url: https://ehsanx.github.io/dr3
+
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left:  [intro, reference, articles]
+    right: [search, github]
+
+reference:
+  - title: "Run the panel"
+    desc: "One call for the whole estimator × nuisance grid."
+    contents:
+      - dr_panel
+      - plot.dr_panel
+  - title: "Estimators"
+    desc: "Each takes (Y, A, nu); pair with a nuisance strategy for a named method."
+    contents:
+      - dr_aipw
+      - dr_tmle
+      - dr_gcomp
+      - dr_iptw
+  - title: "Nuisances"
+    contents:
+      - dr_nuisance
+      - dr_folds
+      - default_dr_library
+  - title: "Datasets"
+    desc: "Tutorial datasets, each pulled from another package (no data is bundled)."
+    contents:
+      - dr_data
+      - dr_nhefs
+      - dr_rhc
+
+articles:
+  - title: "Tutorials"
+    contents:
+      - getting-started
+      - rhc-binary
+      - software-bridge

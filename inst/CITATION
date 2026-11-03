@@ -1,0 +1,20 @@
+bibentry(
+  bibtype = "Article",
+  header  = "To cite dr3 in publications, please cite the paper:",
+  title   = "Three Routes to One Answer: Reconciling {AIPW}, {TMLE}, and Double Machine Learning for Applied Researchers",
+  author  = person("M. Ehsan", "Karim"),
+  journal = "arXiv preprint arXiv:2609.26142",
+  year    = "2026",
+  doi     = "10.48550/arXiv.2609.26142",
+  url     = "https://arxiv.org/abs/2609.26142"
+)
+
+bibentry(
+  bibtype = "Manual",
+  header  = "and the package:",
+  title   = "{dr3}: Doubly-Robust {ATE} Estimators",
+  author  = person("M. Ehsan", "Karim"),
+  year    = "2026",
+  note    = paste("R package version", meta$Version),
+  url     = "https://github.com/ehsanx/dr3"
+)

@@ -1,0 +1,91 @@
+---
+title: "Getting started: one call, eight estimators"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started: one call, eight estimators}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+has_deps <- requireNamespace("causaldata", quietly = TRUE) &&
+            requireNamespace("SuperLearner", quietly = TRUE)
+knitr::opts_chunk$set(
+  eval = has_deps, collapse = TRUE, comment = "#>",
+  fig.width = 7, fig.height = 4.6, fig.align = "center"
+)
+library(dr3)
+```
+
+`dr3` implements the average treatment effect (ATE) estimators reconciled in
+*Three Routes to One Answer*. The organizing idea is that AIPW, TMLE, and double
+machine learning all target the **same** efficient influence function
+
+$$
+D(O) = \Big[\tfrac{A}{g(X)} - \tfrac{1-A}{1-g(X)}\Big]\,\big(Y - Q_A(X)\big)
+       + \big(Q_1(X) - Q_0(X)\big) - \psi,
+$$
+
+and differ only in **how they solve it** (average the score vs. targeting) and
+**how the nuisances** $g(X)=P(A=1\mid X)$ and $Q_a(X)=E[Y\mid A=a,X]$ are fit
+(full-sample, cross-fit, or double cross-fit). `dr3` runs the whole family on one
+shared Super Learner library, so the differences you see come from the
+combination rule and the fitting scheme (and, for split-based estimators, from
+the random split), not from separate implementations.
+
+```{r note, echo = FALSE, results = "asis", eval = !has_deps}
+cat("> This vignette needs the suggested packages **causaldata** and",
+    "**SuperLearner**; its code is shown but not run here.\n")
+```
+
+## One call
+
+We use the canonical Hernán–Robins NHEFS example (quitting smoking → 1971–1982
+weight change), which ships in `causaldata`, so nothing needs downloading.
+
+```{r panel}
+d <- dr_nhefs()
+
+# A small library keeps the vignette fast; use default_dr_library for real work.
+set.seed(1)   # the full-sample fits use the current RNG state; `seed` sets the folds
+fit <- dr_panel(d$Y, d$A, d$X, SL.library = c("SL.mean", "SL.glm", "SL.glmnet"),
+                seed = 1)
+fit
+```
+
+```{r spread, echo = FALSE, results = "asis"}
+dr6 <- fit$estimate[!fit$estimator %in% c("g-computation", "IPTW")]
+cat(sprintf(paste(
+  "In this single run the six doubly-robust estimates (AIPW, TMLE, DML, CV-TMLE, DC-AIPW,",
+  "DC-TMLE) span %.2f kg, from %.2f to %.2f kg; the singly-robust plug-ins (g-computation,",
+  "IPTW) carry no analytic interval. One split with a small library is noisy: the paper",
+  "repeats the split 100 times with a larger library and reports medians, and there the six",
+  "estimates span 0.07 kg (its Steps 4 and 5)."),
+  diff(range(dr6)), min(dr6), max(dr6)))
+```
+
+## Plot it
+
+```{r forest}
+plot(fit)
+```
+
+## Look under the hood
+
+`dr_panel()` is a thin wrapper. You can fit the shared nuisances yourself and
+hand them to any estimator — pairing `dr_aipw()` with cross-fit nuisances *is*
+double machine learning:
+
+```{r nuisance}
+nu <- dr_nuisance(d$Y, d$A, d$X, strategy = "crossfit",
+                  SL.library = c("SL.mean", "SL.glm", "SL.glmnet"))
+dr_aipw(d$Y, d$A, nu)$estimate   # DML
+dr_tmle(d$Y, d$A, nu)$estimate   # CV-TMLE
+```
+
+## Where to next
+
+- **Binary outcomes** — right-heart catheterization (RHC), on the
+  risk-difference scale.
+- **Reconciling with `tmle`, `AIPW`, and `DoubleML`** — the software bridge:
+  what you must match for the packages to agree.
